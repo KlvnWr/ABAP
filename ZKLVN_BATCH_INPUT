@@ -1,0 +1,396 @@
+*&---------------------------------------------------------------------*
+*& Report ZKLVN_BATCH_INPUT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zklvn_batch_input.
+
+TYPES: BEGIN OF ty_csv,
+         campo(200) TYPE c,
+       END OF ty_csv,
+
+       BEGIN OF ty_lfa1,
+         lifnr TYPE lfa1-lifnr,
+       END OF ty_lfa1,
+
+       BEGIN OF ty_saida,
+         contador       TYPE char4,
+         nome           TYPE lfa1-name1,
+         endereco       TYPE lfa1-stras,
+         cidade         TYPE lfa1-ort01,
+         cep            TYPE lfa1-pfach,
+         bairro         TYPE lfa1-ort02,
+         estado         TYPE lfa1-regio,
+         num_fornecedor TYPE lfa1-lifnr,
+         status         TYPE char1,
+         mensag_retorno TYPE char100,
+       END OF ty_saida.
+
+DATA:
+  wa_csv   TYPE ty_csv,
+  wa_lfa1  TYPE ty_lfa1,
+  wa_saida TYPE ty_saida,
+  wa_bdc   TYPE bdcdata,                 " Mapeamento campos BDC
+  wa_msg   TYPE bdcmsgcoll.              " Mensagens retorno BDC
+
+DATA: wa_fieldcat TYPE slis_fieldcat_alv,
+      wa_layout   TYPE slis_layout_alv.
+
+DATA:
+  it_csv   TYPE TABLE OF ty_csv,
+  it_lfa1  TYPE TABLE OF ty_lfa1,
+  it_saida TYPE TABLE OF ty_saida,
+  it_bdc   TYPE TABLE OF bdcdata,        " Mapeamento campos BDC
+  it_msg   TYPE TABLE OF bdcmsgcoll.     " Mensagens retorno BDC
+
+DATA: it_fieldcat TYPE TABLE OF slis_fieldcat_alv.
+
+CONSTANTS: cg_inicial_nome(3) TYPE c VALUE 'KWR',
+           c_xk01             TYPE tstc-tcode VALUE 'XK01'.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1.
+PARAMETERS p_arq TYPE rlgrap-filename OBLIGATORY.
+SELECTION-SCREEN END OF BLOCK b1.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_arq.
+  PERFORM zf_buscar_caminho CHANGING p_arq.
+
+START-OF-SELECTION.
+  PERFORM zf_carregar_arquivo USING p_arq.
+
+END-OF-SELECTION.
+  PERFORM zf_monta_tabela.
+  PERFORM zf_processa_dados.
+  PERFORM zf_preenche_fieldcat.
+  PERFORM zf_ativa_alv.
+
+
+FORM zf_selecionar_dados.
+
+  SELECT lifnr
+    FROM lfa1
+    INTO TABLE it_lfa1
+    UP TO 1 ROWS
+    WHERE lifnr LIKE 'KWR-%'
+    ORDER BY lifnr DESCENDING.
+
+ENDFORM.
+
+FORM zf_buscar_caminho CHANGING p_arq TYPE rlgrap-filename.
+
+  CALL FUNCTION 'KD_GET_FILENAME_ON_F4'
+    CHANGING
+      file_name     = p_arq
+    EXCEPTIONS
+      mask_too_long = 1
+      OTHERS        = 2.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+ENDFORM.
+
+FORM zf_carregar_arquivo USING p_arq TYPE rlgrap-filename.
+  DATA l_filename TYPE string.
+
+  l_filename = p_arq.
+
+  CALL FUNCTION 'GUI_UPLOAD'
+    EXPORTING
+      filename                = l_filename
+    TABLES
+      data_tab                = it_csv
+    EXCEPTIONS
+      file_open_error         = 1
+      file_read_error         = 2
+      no_batch                = 3
+      gui_refuse_filetransfer = 4
+      invalid_type            = 5
+      no_authority            = 6
+      unknown_error           = 7
+      bad_data_format         = 8
+      header_not_allowed      = 9
+      separator_not_allowed   = 10
+      header_too_long         = 11
+      unknown_dp_error        = 12
+      access_denied           = 13
+      dp_out_of_memory        = 14
+      disk_full               = 15
+      dp_timeout              = 16
+      OTHERS                  = 17.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+ENDFORM.
+
+FORM zf_monta_tabela.
+
+  IF it_csv IS NOT INITIAL.
+    LOOP AT it_csv INTO wa_csv.
+      SPLIT wa_csv-campo AT ';'
+      INTO wa_saida-nome
+      wa_saida-endereco
+      wa_saida-cidade
+      wa_saida-cep
+      wa_saida-bairro
+      wa_saida-estado.
+
+      APPEND wa_saida TO it_saida.
+    ENDLOOP.
+  ENDIF.
+ENDFORM.
+
+FORM zf_processa_dados.
+
+  DATA: lv_complete TYPE char4.
+
+  PERFORM zf_selecionar_dados.
+
+  READ TABLE it_lfa1 INTO wa_lfa1 INDEX 1.
+  IF sy-subrc EQ 0.
+
+    SPLIT wa_lfa1-lifnr AT '-'
+      INTO DATA(lv_nome)
+      DATA(lv_numero).
+
+  ELSE.
+
+    lv_nome = cg_inicial_nome.
+    lv_numero = '0001'.
+
+  ENDIF.
+
+  LOOP AT it_saida ASSIGNING FIELD-SYMBOL(<fs_saida>).
+    ADD 1 TO lv_numero.
+    UNPACK lv_numero TO lv_complete.
+    <fs_saida>-num_fornecedor = | { lv_nome }-{ lv_complete } |.
+    <fs_saida>-contador = lv_complete.
+    CONDENSE <fs_saida>-num_fornecedor NO-GAPS.
+
+    PERFORM zf_carrega_t_bdc USING <fs_saida>.
+    PERFORM zf_ativar_shdb CHANGING <fs_saida>-status
+                                    <fs_saida>-mensag_retorno .
+  ENDLOOP.
+
+ENDFORM.
+
+FORM zf_carrega_t_bdc USING p_saida TYPE ty_saida.
+
+  REFRESH it_bdc.
+
+  PERFORM zf_bdc_tela USING 'SAPMF02K' '100'.
+
+  PERFORM zf_bdc_campo USING 'BDC_CURSOR' 'RF02K-KTOKK'.
+  PERFORM zf_bdc_campo USING 'BDC_OKCODE' '/00'.
+  PERFORM zf_bdc_campo USING 'RF02K-LIFNR' p_saida-num_fornecedor.
+  .
+  PERFORM zf_bdc_campo USING 'RF02K-EKORG' '7000'.
+  PERFORM zf_bdc_campo USING 'RF02K-KTOKK' 'BR01'.
+
+  PERFORM zf_bdc_tela USING 'SAPMF02K' '110'.
+
+  PERFORM zf_bdc_campo USING 'BDC_CURSOR' 'LFA1-PSTLZ'.
+  PERFORM zf_bdc_campo USING 'BDC_OKCODE' '=VW'.
+  PERFORM zf_bdc_campo USING 'LFA1-NAME1' p_saida-nome.
+  PERFORM zf_bdc_campo USING 'LFA1-STRAS' p_saida-endereco.
+  PERFORM zf_bdc_campo USING 'LFA1-ORT01' p_saida-cidade.
+  PERFORM zf_bdc_campo USING 'LFA1-PSTLZ' p_saida-cep.
+  PERFORM zf_bdc_campo USING 'LFA1-ORT02' p_saida-bairro.
+  PERFORM zf_bdc_campo USING 'LFA1-LAND1' 'BR'.
+  PERFORM zf_bdc_campo USING 'LFA1-REGIO' p_saida-estado.
+
+  PERFORM zf_bdc_tela USING 'SAPMF02K' '120'.
+
+  PERFORM zf_bdc_campo USING 'BDC_CURSOR' 'LFA1-KUNNR'.
+  PERFORM zf_bdc_campo USING 'BDC_OKCODE' '=VW'.
+  PERFORM zf_bdc_campo USING 'LFA1-TXJCD' 'SP'.
+
+  PERFORM zf_bdc_tela USING 'SAPMF02K' '130'.
+
+  PERFORM zf_bdc_campo USING 'BDC_CURSOR' 'LFBK-BANKS(01)'.
+  PERFORM zf_bdc_campo USING 'BDC_OKCODE' '=VW'.
+
+  PERFORM zf_bdc_tela USING 'SAPMF02K' '380'.
+
+  PERFORM zf_bdc_campo USING 'BDC_CURSOR' 'KNVK-NAMEV(01)'.
+  PERFORM zf_bdc_campo USING 'BDC_OKCODE' '=VW'.
+
+  PERFORM zf_bdc_tela USING 'SAPMF02K' '310'.
+
+  PERFORM zf_bdc_campo USING 'BDC_CURSOR' 'LFM1-ZTERM'.
+  PERFORM zf_bdc_campo USING 'BDC_OKCODE' '=UPDA'.
+  PERFORM zf_bdc_campo USING 'LFM1-ZTERM' '0001'.
+
+ENDFORM.
+
+FORM zf_ativar_shdb CHANGING p_status         TYPE char01
+                             p_mensag_retorno TYPE char100.
+* Variáveis locais para evitar dump na função de mensagens
+  DATA:
+    l_msg_id        LIKE t100-arbgb, " Id da msg
+    l_msg_no        LIKE t100-msgnr, " Número da msg
+    l_msg_var1      LIKE balm-msgv1, " Mensagem 1
+    l_msg_var2      LIKE balm-msgv2, " Mensagem 2
+    l_msg_var3      LIKE balm-msgv3, " Mensagem 3
+    l_msg_var4      LIKE balm-msgv4, " Mensagem 4
+    l_mode          TYPE c         , " Modo call transaction
+    l_msg_text(100) TYPE c         . " Mensagem final.
+
+  CALL TRANSACTION c_xk01 USING it_bdc
+        MODE 'E'
+        MESSAGES INTO it_msg.
+
+  CLEAR wa_msg.
+
+  READ TABLE it_msg INTO wa_msg WITH KEY msgtyp = 'E'.
+  IF sy-subrc EQ 0.
+    p_status = 'E'.
+
+    l_msg_id   = wa_msg-msgid.
+    l_msg_no   = wa_msg-msgnr.
+    l_msg_var1 = wa_msg-msgv1.
+    l_msg_var2 = wa_msg-msgv2.
+    l_msg_var3 = wa_msg-msgv3.
+    l_msg_var4 = wa_msg-msgv4.
+
+    CALL FUNCTION 'MESSAGE_PREPARE'
+      EXPORTING
+        msg_id                 = l_msg_id
+        msg_no                 = l_msg_no
+        msg_var1               = l_msg_var1
+        msg_var2               = l_msg_var2
+        msg_var3               = l_msg_var3
+        msg_var4               = l_msg_var4
+      IMPORTING
+        msg_text               = l_msg_text
+      EXCEPTIONS
+        function_not_completed = 1
+        message_not_found      = 2
+        OTHERS                 = 3.
+    IF sy-subrc <> 0.
+      p_mensag_retorno = l_msg_text.
+    ENDIF.
+  ELSE.
+    CLEAR wa_msg.
+*   OBS: Essa mensagem S/F2/170 só ocorre em caso de sucesso
+*   no call transaction da transação VD01.
+    READ TABLE it_msg INTO wa_msg WITH KEY msgtyp = 'S'.
+
+    IF sy-subrc EQ 0.
+*     Retorna status
+      p_status = 'S'.
+*     Preenche variáveis auxiliares
+      l_msg_id       = wa_msg-msgid.
+      l_msg_no       = wa_msg-msgnr.
+      l_msg_var1     = wa_msg-msgv1.
+      l_msg_var2     = wa_msg-msgv2.
+      l_msg_var3     = wa_msg-msgv3.
+      l_msg_var4     = wa_msg-msgv4.
+*     MONTA MSG DE SUCESSO
+      CALL FUNCTION 'MESSAGE_PREPARE'
+        EXPORTING
+          msg_id                 = l_msg_id
+          msg_no                 = l_msg_no
+          msg_var1               = l_msg_var1
+          msg_var2               = l_msg_var2
+          msg_var3               = l_msg_var3
+          msg_var4               = l_msg_var4
+        IMPORTING
+          msg_text               = l_msg_text
+        EXCEPTIONS
+          function_not_completed = 1
+          message_not_found      = 2
+          OTHERS                 = 3.
+
+      IF sy-subrc EQ 0.
+*       Retorna a mensagem para o relatório
+        p_mensag_retorno = l_msg_text.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.
+
+FORM zf_bdc_tela USING p_program p_tela.
+
+  CLEAR wa_bdc.
+
+  wa_bdc-program  = p_program.
+  wa_bdc-dynpro   = p_tela.
+  wa_bdc-dynbegin = 'X'.
+
+  APPEND wa_bdc TO it_bdc.
+
+ENDFORM.
+
+FORM zf_bdc_campo  USING p_campo p_valor.
+
+* Limpa workarea do mapeamento
+  CLEAR wa_bdc.
+* Preenchendo linha do mapeamento
+  wa_bdc-dynpro = space.   " Sem tela
+  wa_bdc-fnam   = p_campo. " Nome do campo mapeado
+  wa_bdc-fval   = p_valor. " Valor do campo mapeado
+* Retira espaços a esquerda se houverem
+  CONDENSE wa_bdc-fval.
+* Insere registro na tabela interna de mapeamento
+  APPEND wa_bdc TO it_bdc.
+
+ENDFORM.
+
+FORM zf_preenche_fieldcat.
+
+  PERFORM zf_monta_alv USING:
+
+        'CONTADOR'        'IT_SAIDA' ''      'LFA1' 'Registro',
+        'NOME'            'IT_SAIDA' 'NAME1' 'LFA1' '',
+        'ENDERECO'        'IT_SAIDA' 'STRAS' 'LFA1' '',
+        'CIDADE'          'IT_SAIDA' 'ORT01' 'LFA1' '',
+        'CEP'             'IT_SAIDA' 'PFACH' 'LFA1' '',
+        'BAIRRO'          'IT_SAIDA' 'ORT02' 'LFA1' '',
+        'ESTADO'          'IT_SAIDA' 'REGIO' 'LFA1' '',
+        'NUM_FORNECEDOR'  'IT_SAIDA' 'LIFNR' 'LFA1' 'Numero Fornecedor',
+        'STATUS'          'IT_SAIDA' ''      'LFA1' 'Status',
+        'MENSAG_RETORNO'  'IT_SAIDA' ''      'LFA1' 'Mensagem'.
+
+ENDFORM.
+
+FORM zf_monta_alv USING p_fieldname p_tabname p_ref_fieldname p_ref_tabname p_seltext.
+
+  CLEAR wa_fieldcat.
+  wa_fieldcat-fieldname = p_fieldname.
+  wa_fieldcat-tabname = p_tabname.
+  wa_fieldcat-ref_fieldname = p_ref_fieldname.
+  wa_fieldcat-ref_tabname = p_ref_tabname.
+  wa_fieldcat-seltext_l = p_seltext.
+  APPEND wa_fieldcat TO it_fieldcat.
+
+ENDFORM.
+
+FORM zf_ativa_alv.
+
+  wa_layout-colwidth_optimize = 'X'. "Largura melhor possível coluna
+  wa_layout-zebra = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+*     I_CALLBACK_PF_STATUS_SET          = ' '
+*     I_CALLBACK_USER_COMMAND           = ' '
+*     I_CALLBACK_TOP_OF_PAGE            = ' '
+*     I_CALLBACK_HTML_TOP_OF_PAGE       = ' '
+*     I_CALLBACK_HTML_END_OF_LIST       = ' '
+      is_layout          = wa_layout
+      it_fieldcat        = it_fieldcat
+    TABLES
+      t_outtab           = it_saida
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+
+ENDFORM.
