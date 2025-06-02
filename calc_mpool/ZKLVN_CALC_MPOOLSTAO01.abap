@@ -4,8 +4,10 @@
 
 MODULE ZKLVN_CALC_MPOOLUSEO01 OUTPUT.
 
-  SET PF-STATUS '00000001'.
-  SET TITLEBAR '001'.
+  SET PF-STATUS '00000001'. " Atribui os botões e ações
+  SET TITLEBAR '001'. " Título da tela
+
+  " Ação do usuário ao clicar tais botões:
 
   CASE sy-ucomm.
     WHEN 'APAGAR'.
