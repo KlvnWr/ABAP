@@ -1,0 +1,215 @@
+*&---------------------------------------------------------------------*
+*& Include          ZKLVN_GUI_ALV_GRID_DUPLO_F01
+*&---------------------------------------------------------------------*
+
+FORM zf_alv.
+
+  PERFORM zf_selecionar_dados.
+
+  CREATE OBJECT custom_container
+    EXPORTING
+      container_name = 'CC_ALV'.
+
+  CREATE OBJECT splitter
+    EXPORTING
+      align             = 15
+      parent            = custom_container
+      rows              = 1
+      columns           = 2
+    EXCEPTIONS
+      cntl_error        = 1
+      cntl_system_error = 2
+      OTHERS            = 3.
+  IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*   WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+
+  CALL METHOD splitter->get_container
+    EXPORTING
+      row       = 1
+      column    = 1
+    RECEIVING
+      container = ob_container1.
+
+  CALL METHOD splitter->get_container
+    EXPORTING
+      row       = 1
+      column    = 2
+    RECEIVING
+      container = ob_container2.
+
+  CREATE OBJECT ob_grid1
+    EXPORTING
+      i_parent = ob_container1.
+
+  CREATE OBJECT ob_grid2
+    EXPORTING
+      i_parent = ob_container2.
+
+  CREATE OBJECT g_object.
+  SET HANDLER g_object->handle FOR ob_grid1.
+
+  PERFORM zf_layout_alv.
+
+  PERFORM zf_preparar_fieldcat1 CHANGING gt_fieldcat1.
+
+  PERFORM zf_display_fieldcat1.
+
+  PERFORM zf_preparar_fieldcat2 CHANGING gt_fieldcat2.
+
+  PERFORM zf_display_fieldcat2.
+
+ENDFORM.
+
+FORM zf_selecionar_dados.
+
+  SELECT ebeln
+         bukrs
+         bstyp
+         statu
+         aedat
+    FROM ekko
+    INTO TABLE it_ekko.
+
+ENDFORM.
+
+FORM zf_selecionar_depois_click.
+
+  SELECT ebeln
+         ebelp
+         matnr
+         werks
+         txz01
+    FROM ekpo
+    INTO TABLE it_ekpo
+  WHERE ebeln = ls_ekko-ebeln.
+
+ENDFORM.
+
+FORM zf_preparar_fieldcat1 CHANGING lt_fieldcat1 TYPE lvc_t_fcat.
+
+  CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+    EXPORTING
+      i_structure_name       = 'EKKO'
+      i_internal_tabname     = 'IT_EKKO'
+    CHANGING
+      ct_fieldcat            = lt_fieldcat1
+    EXCEPTIONS
+      inconsistent_interface = 1
+      program_error          = 2
+      OTHERS                 = 3.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+ENDFORM.
+
+FORM zf_display_fieldcat1.
+  PERFORM zf_montar_ekpo.
+
+  CALL METHOD ob_grid1->set_table_for_first_display
+    EXPORTING
+      i_structure_name              = 'EKKO'
+      is_layout                     = st_layout
+    CHANGING
+      it_outtab                     = it_ekko
+    EXCEPTIONS
+      invalid_parameter_combination = 1
+      program_error                 = 2
+      too_many_lines                = 3
+      OTHERS                        = 4.
+  IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*   WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+
+ENDFORM.
+
+FORM zf_preparar_fieldcat2 CHANGING lt_fieldcat2 TYPE lvc_t_fcat.
+
+  CALL FUNCTION 'LVC_FIELDCATALOG_MERGE'
+    EXPORTING
+*     i_structure_name       = 'EKPO'
+      i_internal_tabname     = 'IT_EKKPO'
+    CHANGING
+      ct_fieldcat            = lt_fieldcat2
+    EXCEPTIONS
+      inconsistent_interface = 1
+      program_error          = 2
+      OTHERS                 = 3.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+ENDFORM.
+
+FORM zf_montar_ekpo.
+
+  gs_fieldcat2-col_pos = '1'.
+  gs_fieldcat2-fieldname = 'EBELN'.
+  gs_fieldcat2-tabname =  'EKPO'.
+  gs_fieldcat2-scrtext_l = 'Nº do documento de compras'.
+  APPEND gs_fieldcat2 TO gt_fieldcat2.
+  CLEAR gs_fieldcat2.
+
+  gs_fieldcat2-col_pos = '2'.
+  gs_fieldcat2-fieldname = 'EBELP'.
+  gs_fieldcat2-tabname =  'EKPO'.
+  gs_fieldcat2-scrtext_l = 'Nº item doc. compra'.
+  APPEND gs_fieldcat2 TO gt_fieldcat2.
+  CLEAR gs_fieldcat2.
+
+  gs_fieldcat2-col_pos = '3'.
+  gs_fieldcat2-fieldname = 'MATNR'.
+  gs_fieldcat2-tabname =  'EKPO'.
+  gs_fieldcat2-scrtext_l = 'Nº do material'.
+  APPEND gs_fieldcat2 TO gt_fieldcat2.
+  CLEAR gs_fieldcat2.
+
+  gs_fieldcat2-col_pos = '4'.
+  gs_fieldcat2-fieldname = 'WERKS'.
+  gs_fieldcat2-tabname =  'EKPO'.
+  gs_fieldcat2-scrtext_l = 'Centro'.
+  APPEND gs_fieldcat2 TO gt_fieldcat2.
+  CLEAR gs_fieldcat2.
+
+  gs_fieldcat2-col_pos = '5'.
+  gs_fieldcat2-fieldname = 'TXZ01'.
+  gs_fieldcat2-tabname =  'EKPO'.
+  gs_fieldcat2-scrtext_l = 'Texto breve'.
+  APPEND gs_fieldcat2 TO gt_fieldcat2.
+  CLEAR gs_fieldcat2.
+
+ENDFORM.
+
+FORM zf_display_fieldcat2.
+
+  CALL METHOD ob_grid2->set_table_for_first_display
+    EXPORTING
+*     i_structure_name              = 'EKPO'
+      is_layout                     = st_layout
+    CHANGING
+      it_outtab                     = it_ekpo
+      it_fieldcatalog               = gt_fieldcat2
+    EXCEPTIONS
+      invalid_parameter_combination = 1
+      program_error                 = 2
+      too_many_lines                = 3
+      OTHERS                        = 4.
+  IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*   WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  F_LAYOUT_ALV
+*&---------------------------------------------------------------------*
+FORM zf_layout_alv.
+
+  st_layout-cwidth_opt = 'X'.
+  st_layout-zebra = 'X'.
+
+ENDFORM.                    " F_LAYOUT_ALV

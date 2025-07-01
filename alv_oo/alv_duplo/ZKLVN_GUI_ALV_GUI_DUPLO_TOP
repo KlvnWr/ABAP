@@ -1,0 +1,49 @@
+*&---------------------------------------------------------------------*
+*& Include          ZKLVN_GUI_ALV_GUI_DUPLO_TOP
+*&---------------------------------------------------------------------*
+
+TABLES: ekko,
+        ekpo.
+
+TYPES: BEGIN OF ty_ekko,
+         ebeln TYPE ekko-ebeln,
+         bukrs TYPE ekko-bukrs,
+         bstyp TYPE ekko-bstyp,
+         statu TYPE ekko-statu,
+         aedat TYPE ekko-aedat,
+       END OF ty_ekko,
+
+       BEGIN OF ty_ekpo,
+         ebeln TYPE ekpo-ebeln,
+         ebelp TYPE ekpo-ebelp,
+         matnr TYPE ekpo-matnr,
+         werks TYPE ekpo-werks,
+         txz01 TYPE ekpo-txz01,
+       END OF ty_ekpo.
+
+DATA: it_ekko TYPE TABLE OF ty_ekko,
+      it_ekpo TYPE TABLE OF ty_ekpo.
+
+DATA: ls_ekko   TYPE ty_ekko,
+      ls_ekpo   TYPE ty_ekpo,
+      st_layout TYPE lvc_s_layo.
+
+DATA: ob_grid1         TYPE REF TO cl_gui_alv_grid,
+      ob_grid2         TYPE REF TO cl_gui_alv_grid,
+
+      custom_container TYPE REF TO cl_gui_custom_container,
+      splitter         TYPE REF TO cl_gui_splitter_container,
+
+      ob_container1    TYPE REF TO cl_gui_container,
+      ob_container2    TYPE REF TO cl_gui_container,
+
+      gt_fieldcat1     TYPE lvc_t_fcat,
+      gt_fieldcat2     TYPE lvc_t_fcat,
+
+      gs_fieldcat1     TYPE lvc_s_fcat,
+      gs_fieldcat2     TYPE lvc_s_fcat,
+
+      gs_row           TYPE lvc_s_row,
+      gt_row           TYPE lvc_t_row,
+
+      g_object         TYPE REF TO class1.

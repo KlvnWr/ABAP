@@ -1,0 +1,63 @@
+*&---------------------------------------------------------------------*
+*& Report ZKLVN_GUI_ALV_GRID_DUPLO
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zklvn_gui_alv_grid_duplo.
+
+*&---------------------------------------------------------------------*
+*& Class CLASS1
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+
+CLASS class1 DEFINITION.
+  PUBLIC SECTION.
+
+    METHODS handle FOR EVENT double_click OF cl_gui_alv_grid.
+
+ENDCLASS.
+
+INCLUDE zklvn_gui_alv_gui_duplo_top.
+
+START-OF-SELECTION.
+  PERFORM zf_alv.
+  CALL SCREEN 9002.
+
+END-OF-SELECTION.
+
+  INCLUDE zklvn_gui_alv_grid_duplo_sto01.
+
+  INCLUDE zklvn_gui_alv_grid_duplo_usi01.
+
+  INCLUDE zklvn_gui_alv_grid_duplo_f01.
+
+*&---------------------------------------------------------------------*
+*& Class (Implementation) CLASS1
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+
+CLASS class1 IMPLEMENTATION.
+
+  METHOD handle.
+
+    CALL METHOD ob_grid1->get_selected_rows
+      IMPORTING
+        et_index_rows = gt_row.
+
+*    READ TABLE gt_row INTO gs_row INDEX 1. "Forma antiga
+
+    gs_row = gt_row[ 1 ]. " Table Expression, Forma nova
+
+*    READ TABLE it_ekko INTO ls_ekko INDEX gs_row-index. "Forma antiga
+
+    ls_ekko = it_ekko[ gs_row-index ]. " Table Expression, Forma nova
+
+    PERFORM zf_selecionar_depois_click.
+
+    PERFORM zf_display_fieldcat2.
+
+  ENDMETHOD.
+
+ENDCLASS.
